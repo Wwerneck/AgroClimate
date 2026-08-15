@@ -51,6 +51,15 @@ Run tests:
 pytest
 ```
 
+If Docker or Java is not available on the workstation, the project still supports a local demo path:
+
+```powershell
+.\scripts\validate_local.ps1 -SkipDocker
+streamlit run dashboard/app.py
+```
+
+The dashboard first tries PostgreSQL and falls back to Gold Parquet for local portfolio demos.
+
 ## Airflow
 
 Airflow is available at `http://localhost:8080` after Docker Compose starts. The DAG is `agroclimate_pipeline`.
@@ -69,4 +78,3 @@ Sample SQL queries are available in `sql/analytics.sql`, including precipitation
 - Add IBGE PAM and CONAB agriculture datasets.
 - Add Streamlit dashboard backed by PostgreSQL.
 - Expand data quality checks with Great Expectations or Soda.
-
