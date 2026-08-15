@@ -1,0 +1,61 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-agroclimate}
+      POSTGRES_USER: ${POSTGRES_USER:-agroclimate}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agroclimate}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./sql/indexes.sql:/docker-entrypoint-initdb.d/02_indexes.sql:ro
+
+  airflow-webserver:
+    build: .
+    command: webserver
+    depends_on:
+      - postgres
+    env_file: .env
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-agroclimate}:${POSTGRES_PASSWORD:-agroclimate}@postgres:5432/${POSTGRES_DB:-agroclimate}
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      PYTHONPATH: /opt/airflow
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./src:/opt/airflow/src
+      - ./data:/opt/airflow/data
+      - ./sql:/opt/airflow/sql
+
+  airflow-scheduler:
+    build: .
+    command: scheduler
+    depends_on:
+      - airflow-webserver
+    env_file: .env
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-agroclimate}:${POSTGRES_PASSWORD:-agroclimate}@postgres:5432/${POSTGRES_DB:-agroclimate}
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      PYTHONPATH: /opt/airflow
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./src:/opt/airflow/src
+      - ./data:/opt/airflow/data
+      - ./sql:/opt/airflow/sql
+
+  spark:
+    image: bitnami/spark:3.5
+    environment:
+      SPARK_MODE: master
+    ports:
+      - "7077:7077"
+      - "8081:8080"
+
+volumes:
+  postgres_data:
+

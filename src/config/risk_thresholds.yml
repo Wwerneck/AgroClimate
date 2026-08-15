@@ -1,0 +1,9 @@
+drought:
+  precipitation_7d_max_mm: 5
+  consecutive_dry_days_min: 7
+  avg_temperature_7d_min_c: 30
+heat:
+  max_temperature_c: 35
+heavy_rain:
+  daily_precipitation_mm: 50
+

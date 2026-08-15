@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AgroClimate Data Platform</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f4;
+      --ink: #17231b;
+      --muted: #627067;
+      --line: #d9dfd6;
+      --green: #2f7d4f;
+      --blue: #246b8f;
+      --gold: #b7791f;
+      --white: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, Segoe UI, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+    header {
+      padding: 56px min(7vw, 88px) 32px;
+      background: linear-gradient(120deg, rgba(47,125,79,.15), rgba(36,107,143,.12)), var(--white);
+      border-bottom: 1px solid var(--line);
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(34px, 6vw, 72px);
+      line-height: 1;
+      letter-spacing: 0;
+    }
+    .subtitle {
+      max-width: 820px;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 19px;
+      line-height: 1.55;
+    }
+    main { padding: 32px min(7vw, 88px) 64px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+      margin: 24px 0 36px;
+    }
+    .card {
+      background: var(--white);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+    }
+    .card h3 { margin: 0 0 8px; font-size: 16px; }
+    .card p { margin: 0; color: var(--muted); line-height: 1.45; }
+    .pipeline {
+      display: grid;
+      gap: 10px;
+      margin: 20px 0 36px;
+    }
+    .step {
+      display: grid;
+      grid-template-columns: 180px 1fr;
+      gap: 16px;
+      align-items: center;
+      background: var(--white);
+      border: 1px solid var(--line);
+      border-left: 6px solid var(--green);
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .step strong { color: var(--green); }
+    .step span { color: var(--muted); }
+    h2 { margin: 34px 0 12px; font-size: 24px; }
+    code {
+      background: #edf1eb;
+      padding: 2px 6px;
+      border-radius: 5px;
+    }
+    pre {
+      overflow: auto;
+      background: #17231b;
+      color: #f8fff9;
+      padding: 18px;
+      border-radius: 8px;
+    }
+    @media (max-width: 680px) {
+      .step { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>AgroClimate Data Platform</h1>
+    <p class="subtitle">
+      Plataforma de Engenharia de Dados para ingerir clima da Open-Meteo, organizar um Data Lake
+      Bronze/Silver/Gold, processar com PySpark, validar qualidade e carregar um Data Warehouse PostgreSQL.
+    </p>
+  </header>
+  <main>
+    <section class="grid">
+      <article class="card"><h3>Ingestao</h3><p>Cliente Open-Meteo com timeout, retry, logs, metadados e carga incremental.</p></article>
+      <article class="card"><h3>Data Lake</h3><p>Camadas Bronze, Silver, Gold e Quarantine usando Parquet e particionamento.</p></article>
+      <article class="card"><h3>Warehouse</h3><p>Modelo estrela com dim_date, dim_location, dim_source e fact_weather_daily.</p></article>
+      <article class="card"><h3>Orquestracao</h3><p>DAG Airflow com etapas explicitas para ingestao, qualidade, Spark e PostgreSQL.</p></article>
+    </section>
+
+    <h2>Pipeline</h2>
+    <section class="pipeline">
+      <div class="step"><strong>Open-Meteo API</strong><span>Dados horarios meteorologicos para cidades estrategicas do agro brasileiro.</span></div>
+      <div class="step"><strong>Bronze</strong><span>Dados quase crus com ingestion_timestamp, source e pipeline_execution_id.</span></div>
+      <div class="step"><strong>Silver</strong><span>Tipos padronizados, hash deterministico, deduplicacao e validacoes.</span></div>
+      <div class="step"><strong>Gold</strong><span>Metricas diarias, acumulados, amplitude termica e riscos exploratorios.</span></div>
+      <div class="step"><strong>PostgreSQL</strong><span>Carga idempotente com INSERT ... ON CONFLICT no modelo dimensional.</span></div>
+      <div class="step"><strong>Dashboard</strong><span>Streamlit preparado para consumir o warehouse, sem consultar a API diretamente.</span></div>
+    </section>
+
+    <h2>Como executar</h2>
+    <pre><code>cp .env.example .env
+docker compose up -d
+pytest
+python -m src.pipeline</code></pre>
+
+    <h2>Arquivos principais</h2>
+    <p>
+      Veja <code>README.md</code>, <code>dags/agroclimate_pipeline.py</code>,
+      <code>src/ingestion/</code>, <code>src/processing/</code>, <code>sql/schema.sql</code>
+      e <code>dashboard/app.py</code>.
+    </p>
+  </main>
+</body>
+</html>
