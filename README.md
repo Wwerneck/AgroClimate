@@ -32,7 +32,25 @@ The lake follows Bronze, Silver and Gold layers. Bronze stores API-shaped record
 
 The warehouse uses `dim_date`, `dim_location`, `dim_source` and `fact_weather_daily`. The fact grain is one row per date, location and source.
 
-## Running Locally
+## Quick Local Demo
+
+Use this path to validate the project and open the dashboard without Docker. It is useful for portfolio reviews or workstations without Docker, Java or PostgreSQL available.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\validate_local.ps1 -SkipDocker
+streamlit run dashboard/app.py
+```
+
+Expected validation output:
+
+- Python tests pass with `pytest`.
+- Static checks pass with `ruff`.
+- Formatting check passes with `black --check`.
+- The pipeline writes Silver and Gold Parquet data under `data/silver` and `data/gold`.
+
+The dashboard is available at `http://localhost:8501`. It first tries PostgreSQL and then falls back to Gold Parquet, so the local demo works even when the warehouse is not running.
+
+## Full Local Stack
 
 ```bash
 cp .env.example .env
@@ -50,15 +68,6 @@ Run tests:
 ```bash
 pytest
 ```
-
-If Docker or Java is not available on the workstation, the project still supports a local demo path:
-
-```powershell
-.\scripts\validate_local.ps1 -SkipDocker
-streamlit run dashboard/app.py
-```
-
-The dashboard first tries PostgreSQL and falls back to Gold Parquet for local portfolio demos.
 
 ## Airflow
 
