@@ -174,6 +174,52 @@ def save_agriculture_card(weather: pd.DataFrame, agriculture: pd.DataFrame, out:
     image.save(out)
 
 
+def save_dashboard_panorama(weather: pd.DataFrame, agriculture: pd.DataFrame, out: Path) -> None:
+    image = Image.new("RGB", (WIDTH, 1400), BG)
+    draw = ImageDraw.Draw(image)
+    latest_date = pd.to_datetime(weather["event_date"].max()).strftime("%d/%m/%Y")
+    latest = weather[weather["event_date"] == weather["event_date"].max()].copy()
+    draw_header(draw, "AgroClimate dashboard", "Weather risk, water balance and agriculture exposure overview")
+    cards = [
+        ("Latest reading", latest_date, GREEN),
+        ("Cities monitored", str(weather["city"].nunique()), BLUE),
+        ("Risk events", str(int(latest[["drought_risk", "heat_risk", "heavy_rain_risk"]].eq("high").sum().sum())), RED),
+        ("Agriculture rows", f"{len(agriculture):,}".replace(",", "."), ORANGE),
+    ]
+    for i, item in enumerate(cards):
+        draw_card(draw, (90 + i * 365, 205, 420 + i * 365, 345), *item)
+
+    draw_line_chart(draw, weather, (90, 390, 1510, 760))
+
+    rain = (
+        weather.groupby(["city", "state"], as_index=False)["total_precipitation"]
+        .sum()
+        .sort_values("total_precipitation", ascending=False)
+        .head(8)
+    )
+    rain["value"] = rain["total_precipitation"]
+    rain["label"] = rain["city"] + "/" + rain["state"]
+    rain["display"] = rain["total_precipitation"].map(lambda value: f"{value:.1f} mm")
+    rain["color"] = BLUE
+    draw_bar_chart(draw, rain, (90, 820, 760, 1235), "Rain accumulation ranking")
+
+    production = (
+        agriculture.groupby("territory_name", as_index=False)["produced_quantity"]
+        .sum()
+        .sort_values("produced_quantity", ascending=False)
+        .head(8)
+    )
+    production["value"] = production["produced_quantity"]
+    production["label"] = production["territory_name"]
+    production["display"] = production["produced_quantity"].map(lambda value: f"{value / 1_000_000:.1f}M t")
+    production["color"] = GREEN
+    draw_bar_chart(draw, production, (820, 820, 1510, 1235), "Agriculture production ranking")
+
+    draw.text((92, 1285), "Generated from Gold Parquet outputs", fill=MUTED, font=font(23))
+    draw.text((92, 1320), "Source layers: weather_daily and agriculture_summary", fill=MUTED, font=font(23))
+    image.save(out)
+
+
 def _temperature_color(value: float) -> str:
     if value >= 28:
         return RED
@@ -188,6 +234,7 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     weather = pd.read_parquet(settings.gold_dir / "weather_daily")
     agriculture = pd.read_parquet(settings.gold_dir / "agriculture_summary")
+    save_dashboard_panorama(weather, agriculture, out / "agroclimate-dashboard-panorama.png")
     save_overview(weather, agriculture, out / "linkedin-01-overview.png")
     save_climate_card(weather, out / "linkedin-02-climate-monitoring.png")
     save_agriculture_card(weather, agriculture, out / "linkedin-03-agriculture-exposure.png")
