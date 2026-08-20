@@ -58,3 +58,32 @@ class LocalDataLake:
             for record in records:
                 file.write(json.dumps(record, default=str) + "\n")
         return path
+
+    def write_bronze_agriculture(
+        self,
+        records: list[dict[str, Any]],
+        partition_date: date,
+        execution_id: str,
+    ) -> Path:
+        target = (
+            self.base_dir
+            / "bronze"
+            / "agriculture"
+            / "source=ibge_pam"
+            / f"year={partition_date.year:04d}"
+            / f"month={partition_date.month:02d}"
+            / f"day={partition_date.day:02d}"
+        )
+        target.mkdir(parents=True, exist_ok=True)
+        enriched = [
+            {
+                **record,
+                "data_source": record.get("source", "ibge_pam"),
+                "ingestion_timestamp": datetime.utcnow().isoformat(),
+                "pipeline_execution_id": execution_id,
+            }
+            for record in records
+        ]
+        path = target / f"agriculture_{execution_id}.parquet"
+        pd.DataFrame(enriched).to_parquet(path, index=False)
+        return path

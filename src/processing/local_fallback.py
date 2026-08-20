@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.processing.ids import weather_record_id
+from src.processing.parquet_io import read_parquet_files
 
 
 def bronze_to_silver_local(bronze_path: Path, silver_path: Path) -> int:
@@ -99,3 +100,7 @@ def silver_to_gold_local(silver_path: Path, gold_path: Path) -> int:
     target.mkdir(parents=True, exist_ok=True)
     grouped.to_parquet(target / "gold_weather_daily.parquet", index=False)
     return len(grouped)
+
+
+def _read_parquet_files(path: Path) -> pd.DataFrame:
+    return read_parquet_files(path)
