@@ -1,0 +1,4 @@
+source,source_table,product_code,product_name,crop_type
+ibge_pam,1612,2713,Soja,temporary
+ibge_pam,1612,2714,Sorgo,temporary
+ibge_pam,1612,2715,Tomate,temporary
