@@ -60,3 +60,25 @@ class MetadataStore:
         path = self.metadata_dir / "etl_pipeline_runs.jsonl"
         with path.open("a", encoding="utf-8") as file:
             file.write(json.dumps({"pipeline_execution_id": execution_id, **payload}) + "\n")
+
+    def append_dataset_metric(
+        self,
+        execution_id: str,
+        dataset: str,
+        layer: str,
+        records: int,
+        status: str = "success",
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        path = self.metadata_dir / "etl_dataset_metrics.jsonl"
+        payload = {
+            "pipeline_execution_id": execution_id,
+            "dataset": dataset,
+            "layer": layer,
+            "records": records,
+            "status": status,
+            "measured_at": datetime.utcnow().isoformat(),
+            **(extra or {}),
+        }
+        with path.open("a", encoding="utf-8") as file:
+            file.write(json.dumps(payload, default=str) + "\n")

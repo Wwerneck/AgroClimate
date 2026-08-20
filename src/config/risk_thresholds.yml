@@ -6,4 +6,10 @@ heat:
   max_temperature_c: 35
 heavy_rain:
   daily_precipitation_mm: 50
-
+quality:
+  min_temperature_c: -20
+  max_temperature_c: 60
+  min_humidity_pct: 0
+  max_humidity_pct: 100
+  min_precipitation_mm: 0
+  min_wind_speed_kmh: 0

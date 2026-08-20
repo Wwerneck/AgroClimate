@@ -3,8 +3,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from src.config.risk_thresholds import load_risk_thresholds
+
 
 def validate_weather_record(record: dict[str, Any], execution_id: str) -> tuple[bool, dict[str, Any] | None]:
+    thresholds = load_risk_thresholds()
     reasons: list[str] = []
     if not record.get("timestamp"):
         reasons.append("timestamp_is_required")
@@ -12,10 +15,24 @@ def validate_weather_record(record: dict[str, Any], execution_id: str) -> tuple[
         reasons.append("city_is_required")
     _between(record, "latitude", -90, 90, reasons)
     _between(record, "longitude", -180, 180, reasons)
-    _between(record, "relative_humidity_2m", 0, 100, reasons, allow_null=True)
-    _minimum(record, "precipitation_mm", 0, reasons, allow_null=True)
-    _minimum(record, "wind_speed_kmh", 0, reasons, allow_null=True)
-    _between(record, "temperature_2m", -20, 60, reasons, allow_null=True)
+    _between(
+        record,
+        "relative_humidity_2m",
+        thresholds.quality.min_humidity_pct,
+        thresholds.quality.max_humidity_pct,
+        reasons,
+        allow_null=True,
+    )
+    _minimum(record, "precipitation_mm", thresholds.quality.min_precipitation_mm, reasons, allow_null=True)
+    _minimum(record, "wind_speed_kmh", thresholds.quality.min_wind_speed_kmh, reasons, allow_null=True)
+    _between(
+        record,
+        "temperature_2m",
+        thresholds.quality.min_temperature_c,
+        thresholds.quality.max_temperature_c,
+        reasons,
+        allow_null=True,
+    )
     if not reasons:
         return True, None
     return False, {

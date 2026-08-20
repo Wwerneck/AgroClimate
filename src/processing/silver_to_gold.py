@@ -5,9 +5,12 @@ from pathlib import Path
 from pyspark.sql import DataFrame, SparkSession, Window
 from pyspark.sql import functions as F
 
+from src.config.risk_thresholds import load_risk_thresholds
+
 
 def transform_silver_to_gold(df: DataFrame) -> DataFrame:
     """Aggregate hourly silver weather into daily analytical records."""
+    thresholds = load_risk_thresholds()
     daily = df.groupBy("event_date", "city", "state", "region", "latitude", "longitude", "source").agg(
         F.avg("temperature_2m").alias("avg_temperature"),
         F.max("temperature_2m").alias("max_temperature"),
@@ -35,16 +38,21 @@ def transform_silver_to_gold(df: DataFrame) -> DataFrame:
         .withColumn(
             "drought_risk",
             F.when(
-                (F.col("precipitation_accumulated_7d") <= 5)
-                & (F.col("days_without_rain") >= 7)
-                & (F.col("avg_temperature_7d") >= 30),
+                (F.col("precipitation_accumulated_7d") <= thresholds.drought.precipitation_7d_max_mm)
+                & (F.col("days_without_rain") >= thresholds.drought.consecutive_dry_days_min)
+                & (F.col("avg_temperature_7d") >= thresholds.drought.avg_temperature_7d_min_c),
                 "high",
             ).otherwise("normal"),
         )
-        .withColumn("heat_risk", F.when(F.col("max_temperature") >= 35, "high").otherwise("normal"))
+        .withColumn(
+            "heat_risk",
+            F.when(F.col("max_temperature") >= thresholds.heat.max_temperature_c, "high").otherwise("normal"),
+        )
         .withColumn(
             "heavy_rain_risk",
-            F.when(F.col("total_precipitation") >= 50, "high").otherwise("normal"),
+            F.when(F.col("total_precipitation") >= thresholds.heavy_rain.daily_precipitation_mm, "high").otherwise(
+                "normal"
+            ),
         )
         .withColumn("year", F.year("event_date"))
         .withColumn("month", F.month("event_date"))
@@ -54,6 +62,7 @@ def transform_silver_to_gold(df: DataFrame) -> DataFrame:
 
 def run(silver_path: Path, gold_path: Path, spark: SparkSession | None = None) -> None:
     active_spark = spark or SparkSession.builder.appName("agroclimate-silver-to-gold").getOrCreate()
+    active_spark.conf.set("spark.sql.sources.partitionOverwriteMode", "dynamic")
     df = active_spark.read.parquet(str(silver_path / "weather"))
     gold = transform_silver_to_gold(df)
     (

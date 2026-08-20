@@ -9,6 +9,7 @@ from src.config.settings import Settings
 from src.ingestion.locations import Location, load_locations
 from src.ingestion.open_meteo_client import OpenMeteoClient
 from src.monitoring.metadata import MetadataStore
+from src.quality.weather_rules import split_valid_invalid
 from src.storage.local_lake import LocalDataLake
 
 LOGGER = logging.getLogger("agroclimate.ingestion")
@@ -73,9 +74,18 @@ def run_weather_ingestion(settings: Settings, execution_id: str) -> dict[str, An
         payload = client.fetch_weather(location, start_date, end_date)
         all_records.extend(normalize_open_meteo_payload(location, payload))
 
-    lake.write_bronze_weather(all_records, end_date, execution_id)
+    valid_records, rejected_records = split_valid_invalid(all_records, execution_id)
+    lake.write_bronze_weather(valid_records, end_date, execution_id)
+    lake.write_quarantine(rejected_records, execution_id)
     elapsed = perf_counter() - started
-    metadata_store.record_success(PIPELINE_NAME, SOURCE, end_date, len(all_records), elapsed)
+    metadata_store.record_success(PIPELINE_NAME, SOURCE, end_date, len(valid_records), elapsed)
+    metadata_store.append_dataset_metric(
+        execution_id,
+        dataset="weather",
+        layer="bronze",
+        records=len(valid_records),
+        extra={"records_extracted": len(all_records), "records_rejected": len(rejected_records)},
+    )
     metadata_store.append_run(
         execution_id,
         {
@@ -83,8 +93,20 @@ def run_weather_ingestion(settings: Settings, execution_id: str) -> dict[str, An
             "finished_at": datetime.utcnow().isoformat(),
             "duration_seconds": elapsed,
             "records_extracted": len(all_records),
+            "records_rejected": len(rejected_records),
             "status": "success",
         },
     )
-    LOGGER.info("ingestion completed records=%s elapsed=%.2f", len(all_records), elapsed)
-    return {"records_extracted": len(all_records), "last_ingested_date": end_date.isoformat()}
+    LOGGER.info(
+        "ingestion completed extracted=%s valid=%s rejected=%s elapsed=%.2f",
+        len(all_records),
+        len(valid_records),
+        len(rejected_records),
+        elapsed,
+    )
+    return {
+        "records_extracted": len(all_records),
+        "records_valid": len(valid_records),
+        "records_rejected": len(rejected_records),
+        "last_ingested_date": end_date.isoformat(),
+    }

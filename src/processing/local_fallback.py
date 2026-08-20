@@ -4,12 +4,14 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.config.risk_thresholds import load_risk_thresholds
 from src.processing.ids import weather_record_id
 from src.processing.parquet_io import read_parquet_files
 
 
 def bronze_to_silver_local(bronze_path: Path, silver_path: Path) -> int:
     """Local fallback for machines without Java/Spark; PySpark remains the production path."""
+    thresholds = load_risk_thresholds()
     frame = pd.read_parquet(bronze_path)
     frame["weather_record_id"] = frame.apply(
         lambda row: weather_record_id(row["city"], row["timestamp"], row["latitude"], row["longitude"]),
@@ -36,10 +38,20 @@ def bronze_to_silver_local(bronze_path: Path, silver_path: Path) -> int:
         & frame["city"].astype(str).str.strip().ne("")
         & frame["latitude"].between(-90, 90)
         & frame["longitude"].between(-180, 180)
-        & (frame["relative_humidity_2m"].isna() | frame["relative_humidity_2m"].between(0, 100))
-        & (frame["precipitation_mm"].isna() | (frame["precipitation_mm"] >= 0))
-        & (frame["wind_speed_kmh"].isna() | (frame["wind_speed_kmh"] >= 0))
-        & (frame["temperature_2m"].isna() | frame["temperature_2m"].between(-20, 60))
+        & (
+            frame["relative_humidity_2m"].isna()
+            | frame["relative_humidity_2m"].between(
+                thresholds.quality.min_humidity_pct, thresholds.quality.max_humidity_pct
+            )
+        )
+        & (frame["precipitation_mm"].isna() | (frame["precipitation_mm"] >= thresholds.quality.min_precipitation_mm))
+        & (frame["wind_speed_kmh"].isna() | (frame["wind_speed_kmh"] >= thresholds.quality.min_wind_speed_kmh))
+        & (
+            frame["temperature_2m"].isna()
+            | frame["temperature_2m"].between(
+                thresholds.quality.min_temperature_c, thresholds.quality.max_temperature_c
+            )
+        )
     )
     silver = frame.loc[mask].drop_duplicates(subset=["weather_record_id"]).copy()
     silver["year"] = pd.to_datetime(silver["event_date"]).dt.year
@@ -52,6 +64,7 @@ def bronze_to_silver_local(bronze_path: Path, silver_path: Path) -> int:
 
 def silver_to_gold_local(silver_path: Path, gold_path: Path) -> int:
     """Local fallback daily aggregation for machines without Java/Spark."""
+    thresholds = load_risk_thresholds()
     frame = pd.read_parquet(silver_path / "weather")
     grouped = (
         frame.groupby(["event_date", "city", "state", "region", "latitude", "longitude", "source"], dropna=False)
@@ -87,13 +100,19 @@ def silver_to_gold_local(silver_path: Path, gold_path: Path) -> int:
     grouped["thermal_amplitude"] = grouped["max_temperature"] - grouped["min_temperature"]
     grouped["drought_risk"] = "normal"
     grouped.loc[
-        (grouped["precipitation_accumulated_7d"] <= 5)
-        & (grouped["days_without_rain"] >= 7)
-        & (grouped["avg_temperature_7d"] >= 30),
+        (grouped["precipitation_accumulated_7d"] <= thresholds.drought.precipitation_7d_max_mm)
+        & (grouped["days_without_rain"] >= thresholds.drought.consecutive_dry_days_min)
+        & (grouped["avg_temperature_7d"] >= thresholds.drought.avg_temperature_7d_min_c),
         "drought_risk",
     ] = "high"
-    grouped["heat_risk"] = grouped["max_temperature"].ge(35).map({True: "high", False: "normal"})
-    grouped["heavy_rain_risk"] = grouped["total_precipitation"].ge(50).map({True: "high", False: "normal"})
+    grouped["heat_risk"] = (
+        grouped["max_temperature"].ge(thresholds.heat.max_temperature_c).map({True: "high", False: "normal"})
+    )
+    grouped["heavy_rain_risk"] = (
+        grouped["total_precipitation"]
+        .ge(thresholds.heavy_rain.daily_precipitation_mm)
+        .map({True: "high", False: "normal"})
+    )
     grouped["year"] = pd.to_datetime(grouped["event_date"]).dt.year
     grouped["month"] = pd.to_datetime(grouped["event_date"]).dt.month
     target = gold_path / "weather_daily"

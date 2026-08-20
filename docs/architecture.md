@@ -11,3 +11,6 @@ AgroClimate uses a layered data architecture:
 
 Bronze is partitioned by event ingestion date. Silver and Gold are partitioned by year, month and state to support common analytical filters without generating one partition per city or hour.
 
+Spark processing uses dynamic partition overwrite to avoid replacing unrelated partitions during incremental reprocessing. The local Pandas fallback mirrors the same quality and risk thresholds for workstation demos.
+
+Weather records rejected during ingestion are written to quarantine. Execution metadata and dataset-level metrics are appended under `data/metadata` for lightweight observability.

@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.config.risk_thresholds import load_risk_thresholds
 from src.utils.exceptions import DataValidationError
 
 BRONZE_REQUIRED_COLUMNS = {
@@ -135,13 +136,32 @@ def _require_non_null(frame: pd.DataFrame, columns: list[str], label: str) -> No
 
 
 def _validate_weather_ranges(frame: pd.DataFrame, label: str) -> None:
+    thresholds = load_risk_thresholds()
     checks = [
         ("latitude", frame["latitude"].between(-90, 90)),
         ("longitude", frame["longitude"].between(-180, 180)),
-        ("relative_humidity_2m", frame["relative_humidity_2m"].isna() | frame["relative_humidity_2m"].between(0, 100)),
-        ("precipitation_mm", frame["precipitation_mm"].isna() | frame["precipitation_mm"].ge(0)),
-        ("wind_speed_kmh", frame["wind_speed_kmh"].isna() | frame["wind_speed_kmh"].ge(0)),
-        ("temperature_2m", frame["temperature_2m"].isna() | frame["temperature_2m"].between(-20, 60)),
+        (
+            "relative_humidity_2m",
+            frame["relative_humidity_2m"].isna()
+            | frame["relative_humidity_2m"].between(
+                thresholds.quality.min_humidity_pct, thresholds.quality.max_humidity_pct
+            ),
+        ),
+        (
+            "precipitation_mm",
+            frame["precipitation_mm"].isna() | frame["precipitation_mm"].ge(thresholds.quality.min_precipitation_mm),
+        ),
+        (
+            "wind_speed_kmh",
+            frame["wind_speed_kmh"].isna() | frame["wind_speed_kmh"].ge(thresholds.quality.min_wind_speed_kmh),
+        ),
+        (
+            "temperature_2m",
+            frame["temperature_2m"].isna()
+            | frame["temperature_2m"].between(
+                thresholds.quality.min_temperature_c, thresholds.quality.max_temperature_c
+            ),
+        ),
     ]
     failed = [column for column, mask in checks if not mask.all()]
     if failed:
@@ -149,15 +169,42 @@ def _validate_weather_ranges(frame: pd.DataFrame, label: str) -> None:
 
 
 def _validate_gold_ranges(frame: pd.DataFrame) -> None:
+    thresholds = load_risk_thresholds()
     checks = [
         ("latitude", frame["latitude"].between(-90, 90)),
         ("longitude", frame["longitude"].between(-180, 180)),
-        ("avg_humidity", frame["avg_humidity"].isna() | frame["avg_humidity"].between(0, 100)),
-        ("total_precipitation", frame["total_precipitation"].isna() | frame["total_precipitation"].ge(0)),
+        (
+            "avg_humidity",
+            frame["avg_humidity"].isna()
+            | frame["avg_humidity"].between(thresholds.quality.min_humidity_pct, thresholds.quality.max_humidity_pct),
+        ),
+        (
+            "total_precipitation",
+            frame["total_precipitation"].isna()
+            | frame["total_precipitation"].ge(thresholds.quality.min_precipitation_mm),
+        ),
         ("days_without_rain", frame["days_without_rain"].isna() | frame["days_without_rain"].ge(0)),
-        ("avg_temperature", frame["avg_temperature"].isna() | frame["avg_temperature"].between(-20, 60)),
-        ("max_temperature", frame["max_temperature"].isna() | frame["max_temperature"].between(-20, 60)),
-        ("min_temperature", frame["min_temperature"].isna() | frame["min_temperature"].between(-20, 60)),
+        (
+            "avg_temperature",
+            frame["avg_temperature"].isna()
+            | frame["avg_temperature"].between(
+                thresholds.quality.min_temperature_c, thresholds.quality.max_temperature_c
+            ),
+        ),
+        (
+            "max_temperature",
+            frame["max_temperature"].isna()
+            | frame["max_temperature"].between(
+                thresholds.quality.min_temperature_c, thresholds.quality.max_temperature_c
+            ),
+        ),
+        (
+            "min_temperature",
+            frame["min_temperature"].isna()
+            | frame["min_temperature"].between(
+                thresholds.quality.min_temperature_c, thresholds.quality.max_temperature_c
+            ),
+        ),
     ]
     failed = [column for column, mask in checks if not mask.all()]
     if failed:

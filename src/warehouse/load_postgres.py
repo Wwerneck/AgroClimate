@@ -21,11 +21,7 @@ def load_gold_to_postgres(gold_path: Path, settings: Settings) -> int:
         with psycopg.connect(settings.postgres_dsn) as conn:
             _ensure_warehouse_schema(conn)
             with conn.cursor() as cur:
-                loaded = 0
-                for row in frame.to_dict("records"):
-                    _upsert_dimensions(cur, row)
-                    _upsert_fact(cur, row)
-                    loaded += 1
+                loaded = _load_weather_daily(cur, frame)
                 loaded += _load_agriculture_summary(cur, gold_path)
             conn.commit()
         return loaded
@@ -47,6 +43,173 @@ def _ensure_warehouse_schema(conn: psycopg.Connection) -> None:
 def _schema_sql_files() -> list[Path]:
     migration_files = sorted((SQL_DIR / "migrations").glob("*.sql")) if (SQL_DIR / "migrations").exists() else []
     return [SQL_DIR / "schema.sql", *migration_files, SQL_DIR / "indexes.sql"]
+
+
+def _load_weather_daily(cur: psycopg.Cursor, frame: pd.DataFrame) -> int:
+    if frame.empty:
+        return 0
+    rows = [_weather_staging_row(row) for row in _records(frame)]
+    cur.execute("""
+        CREATE TEMP TABLE staging_weather_daily (
+            date_id INTEGER,
+            event_date DATE,
+            city TEXT,
+            state TEXT,
+            region TEXT,
+            latitude NUMERIC,
+            longitude NUMERIC,
+            source TEXT,
+            avg_temperature NUMERIC,
+            max_temperature NUMERIC,
+            min_temperature NUMERIC,
+            total_precipitation NUMERIC,
+            avg_humidity NUMERIC,
+            avg_wind_speed NUMERIC,
+            max_wind_speed NUMERIC,
+            solar_radiation NUMERIC,
+            evapotranspiration NUMERIC,
+            days_without_rain INTEGER,
+            precipitation_accumulated_7d NUMERIC,
+            precipitation_accumulated_30d NUMERIC,
+            avg_temperature_7d NUMERIC,
+            avg_temperature_30d NUMERIC,
+            thermal_amplitude NUMERIC,
+            drought_risk TEXT,
+            heat_risk TEXT,
+            heavy_rain_risk TEXT
+        ) ON COMMIT DROP
+        """)
+    cur.executemany(
+        """
+        INSERT INTO staging_weather_daily (
+            date_id, event_date, city, state, region, latitude, longitude, source,
+            avg_temperature, max_temperature, min_temperature, total_precipitation,
+            avg_humidity, avg_wind_speed, max_wind_speed, solar_radiation,
+            evapotranspiration, days_without_rain, precipitation_accumulated_7d,
+            precipitation_accumulated_30d, avg_temperature_7d, avg_temperature_30d,
+            thermal_amplitude, drought_risk, heat_risk, heavy_rain_risk
+        )
+        VALUES (
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+        )
+        """,
+        rows,
+    )
+    _merge_weather_dimensions(cur)
+    _merge_weather_facts(cur)
+    return len(rows)
+
+
+def _records(frame: pd.DataFrame) -> list[dict[str, Any]]:
+    normalized = frame.astype(object).where(pd.notna(frame), None)
+    return normalized.to_dict("records")
+
+
+def _weather_staging_row(row: dict[str, Any]) -> tuple[Any, ...]:
+    event_date = pd.to_datetime(row["event_date"]).date()
+    return (
+        _date_id(event_date),
+        event_date,
+        row["city"],
+        row["state"],
+        row["region"],
+        row["latitude"],
+        row["longitude"],
+        row.get("source", "open_meteo"),
+        row.get("avg_temperature"),
+        row.get("max_temperature"),
+        row.get("min_temperature"),
+        row.get("total_precipitation"),
+        row.get("avg_humidity"),
+        row.get("avg_wind_speed"),
+        row.get("max_wind_speed"),
+        row.get("solar_radiation"),
+        row.get("evapotranspiration"),
+        row.get("days_without_rain"),
+        row.get("precipitation_accumulated_7d"),
+        row.get("precipitation_accumulated_30d"),
+        row.get("avg_temperature_7d"),
+        row.get("avg_temperature_30d"),
+        row.get("thermal_amplitude"),
+        row.get("drought_risk"),
+        row.get("heat_risk"),
+        row.get("heavy_rain_risk"),
+    )
+
+
+def _merge_weather_dimensions(cur: psycopg.Cursor) -> None:
+    cur.execute("""
+        INSERT INTO dim_date (date_id, full_date, day, day_of_week, week, month, month_name, quarter, year, is_weekend)
+        SELECT DISTINCT
+            date_id,
+            event_date,
+            EXTRACT(DAY FROM event_date)::INTEGER,
+            EXTRACT(ISODOW FROM event_date)::INTEGER,
+            EXTRACT(WEEK FROM event_date)::INTEGER,
+            EXTRACT(MONTH FROM event_date)::INTEGER,
+            TO_CHAR(event_date, 'Month'),
+            EXTRACT(QUARTER FROM event_date)::INTEGER,
+            EXTRACT(YEAR FROM event_date)::INTEGER,
+            EXTRACT(ISODOW FROM event_date)::INTEGER >= 6
+        FROM staging_weather_daily
+        ON CONFLICT (date_id) DO NOTHING
+        """)
+    cur.execute("""
+        INSERT INTO dim_location (city, state, region, latitude, longitude)
+        SELECT DISTINCT city, state, region, latitude, longitude
+        FROM staging_weather_daily
+        ON CONFLICT (city, state) DO UPDATE
+        SET region = EXCLUDED.region, latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude
+        """)
+    cur.execute("""
+        INSERT INTO dim_source (source_name, source_type)
+        SELECT DISTINCT source, 'weather_api'
+        FROM staging_weather_daily
+        ON CONFLICT (source_name) DO NOTHING
+        """)
+
+
+def _merge_weather_facts(cur: psycopg.Cursor) -> None:
+    cur.execute("""
+        INSERT INTO fact_weather_daily (
+            date_id, location_id, source_id, avg_temperature, max_temperature, min_temperature,
+            total_precipitation, avg_humidity, avg_wind_speed, max_wind_speed, solar_radiation,
+            evapotranspiration, days_without_rain, precipitation_accumulated_7d,
+            precipitation_accumulated_30d, avg_temperature_7d, avg_temperature_30d,
+            thermal_amplitude, drought_risk, heat_risk, heavy_rain_risk
+        )
+        SELECT
+            stg.date_id, l.location_id, s.source_id, stg.avg_temperature, stg.max_temperature,
+            stg.min_temperature, stg.total_precipitation, stg.avg_humidity, stg.avg_wind_speed,
+            stg.max_wind_speed, stg.solar_radiation, stg.evapotranspiration,
+            stg.days_without_rain, stg.precipitation_accumulated_7d,
+            stg.precipitation_accumulated_30d, stg.avg_temperature_7d,
+            stg.avg_temperature_30d, stg.thermal_amplitude, stg.drought_risk,
+            stg.heat_risk, stg.heavy_rain_risk
+        FROM staging_weather_daily stg
+        JOIN dim_location l ON l.city = stg.city AND l.state = stg.state
+        JOIN dim_source s ON s.source_name = stg.source
+        ON CONFLICT (date_id, location_id, source_id) DO UPDATE SET
+            avg_temperature = EXCLUDED.avg_temperature,
+            max_temperature = EXCLUDED.max_temperature,
+            min_temperature = EXCLUDED.min_temperature,
+            total_precipitation = EXCLUDED.total_precipitation,
+            avg_humidity = EXCLUDED.avg_humidity,
+            avg_wind_speed = EXCLUDED.avg_wind_speed,
+            max_wind_speed = EXCLUDED.max_wind_speed,
+            solar_radiation = EXCLUDED.solar_radiation,
+            evapotranspiration = EXCLUDED.evapotranspiration,
+            days_without_rain = EXCLUDED.days_without_rain,
+            precipitation_accumulated_7d = EXCLUDED.precipitation_accumulated_7d,
+            precipitation_accumulated_30d = EXCLUDED.precipitation_accumulated_30d,
+            avg_temperature_7d = EXCLUDED.avg_temperature_7d,
+            avg_temperature_30d = EXCLUDED.avg_temperature_30d,
+            thermal_amplitude = EXCLUDED.thermal_amplitude,
+            drought_risk = EXCLUDED.drought_risk,
+            heat_risk = EXCLUDED.heat_risk,
+            heavy_rain_risk = EXCLUDED.heavy_rain_risk
+        """)
 
 
 def _upsert_dimensions(cur: psycopg.Cursor, row: dict[str, Any]) -> None:

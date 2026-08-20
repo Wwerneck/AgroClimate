@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     initial_ingestion_date: str = "2026-08-01"
     data_dir: Path = Field(default=Path("data"))
     log_level: str = "INFO"
+    strict_pipeline: bool = False
 
     def __init__(self) -> None:
         if SettingsConfigDict is not None:
@@ -49,6 +50,7 @@ class Settings(BaseSettings):
         self.initial_ingestion_date = os.getenv("INITIAL_INGESTION_DATE", self.initial_ingestion_date)
         self.data_dir = Path(os.getenv("DATA_DIR", str(self.data_dir)))
         self.log_level = os.getenv("LOG_LEVEL", self.log_level)
+        self.strict_pipeline = os.getenv("STRICT_PIPELINE", str(self.strict_pipeline)).lower() == "true"
 
     @property
     def bronze_dir(self) -> Path:

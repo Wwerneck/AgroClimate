@@ -105,6 +105,9 @@ Airflow is available at `http://localhost:8080` after Docker Compose starts. The
 Rules validate required timestamps and cities, geographic bounds, humidity, precipitation, wind speed and temperature. Invalid records are written to `data/quarantine`.
 Airflow quality gates also validate Bronze, Silver and Gold Parquet datasets for required columns, non-empty outputs,
 critical nulls, duplicate Silver record IDs and weather metric ranges.
+Risk and quality thresholds are centralized in `src/config/risk_thresholds.yml` so Spark, Pandas fallback and validation checks use the same limits.
+
+Set `STRICT_PIPELINE=true` when failures in optional agriculture ingestion or Spark processing should fail the local pipeline instead of using demo-friendly fallbacks.
 
 ## Analytics
 
@@ -119,6 +122,8 @@ Pipeline metadata is written under `data/metadata`. Use the status helper to ins
 ```bash
 make status
 ```
+
+Dataset-level metrics are appended to `data/metadata/etl_dataset_metrics.jsonl`, including layer, dataset, record counts and rejected weather records.
 
 ## Portfolio Demo
 
