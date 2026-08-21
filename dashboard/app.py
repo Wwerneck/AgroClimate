@@ -616,7 +616,7 @@ with risk_tab:
             orientation="h",
             title="Alertas altos por tipo",
             labels={"events": "Eventos", "risk_type": "Tipo de alerta"},
-            color_discrete_map={"Seca": "#b91c1c", "Calor": "#ea580c", "Chuva forte": "#2563eb"},
+            color_discrete_map={"Seca": "#ff0000", "Calor": "#fa5c07", "Chuva forte": "#16326E"},
         )
         fig_risk_bar.update_traces(
             textposition="outside",
